@@ -1,119 +1,127 @@
 import streamlit as st
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 import plotly.graph_objects as go
-import os
 
-# ---------------- PAGE CONFIG ----------------
+# ---------------- PAGE ----------------
 st.set_page_config(page_title="Electricity Predictor", layout="centered")
-
-# ---------------- TITLE ----------------
-st.markdown("<h1 style='text-align:center; color:#00C9A7;'>⚡ Electricity Consumption & Bill Predictor</h1>", unsafe_allow_html=True)
-
-st.write("This system predicts electricity consumption and estimates the bill using machine learning based on user inputs.")
+st.title("⚡ Electricity Consumption & Bill Predictor")
 
 # ---------------- LOAD DATA ----------------
-if not os.path.exists("electricity_units.csv"):
-    st.error("Dataset not found!")
-    st.stop()
-
 df = pd.read_csv("electricity_units.csv")
 
-# ---------------- MODEL ----------------
-X = df[['Past_Units', 'No_of_People', 'Season']]
-y = df['Current_Units']
+# ---------------- ENCODING ----------------
+season_map = {"Winter":0, "Summer":1, "Rainy":2}
+house_map = {"1BHK":1, "2BHK":2, "3BHK":3}
 
-model = LinearRegression()
+df['Season'] = df['Season'].map(season_map)
+df['House_Type'] = df['House_Type'].map(house_map)
+
+# ---------------- MODEL ----------------
+features = ['Prev_Month_Units','No_of_People','Season','Temperature',
+            'House_Size','House_Type','Num_Appliances','Usage_Hours','Tariff']
+
+X = df[features]
+y = df['Units_Consumed']
+
+model = RandomForestRegressor(n_estimators=200, random_state=42)
 model.fit(X, y)
 
-# ---------------- INPUT FORM ----------------
+# ---------------- INPUT ----------------
 st.subheader("📝 Enter Details")
 
-with st.form("form"):
-    past_units = st.number_input("Last Month Units", 0, 1000, 100)
-    people = st.slider("Number of People", 1, 10, 3)
-    season = st.selectbox("Season", ["Winter", "Summer", "Rainy"])
-    submit = st.form_submit_button("🚀 Predict")
-
-season_map = {"Winter": 0, "Summer": 1, "Rainy": 2}
+prev_units = st.number_input("Previous Month Units", 0, 1000, 200)
+people = st.number_input("Number of People", 1, 10, 3)
+season = st.selectbox("Season", ["Winter","Summer","Rainy"])
+temp = st.number_input("Temperature (°C)", 0, 50, 28)
+house_size = st.number_input("House Size (sq.ft)", 200, 5000, 1000)
+house_type = st.selectbox("House Type", ["1BHK","2BHK","3BHK"])
+appliances = st.number_input("Number of Appliances", 1, 30, 10)
+usage_hours = st.number_input("Usage Hours per Day", 1, 24, 6)
+tariff = st.number_input("Electricity Tariff (₹/unit)", 1, 20, 5)
 
 # ---------------- BILL FUNCTION ----------------
 def calculate_bill(units):
     if units <= 100:
         return units * 2
     elif units <= 200:
-        return (100 * 2) + (units - 100) * 4
+        return (100*2) + (units-100)*4
     else:
-        return (100 * 2) + (100 * 4) + (units - 200) * 6
+        return (100*2) + (100*4) + (units-200)*6
 
-# ---------------- OUTPUT ----------------
-if submit:
+# ---------------- PREDICT ----------------
+if st.button("🚀 Predict"):
+
     input_data = pd.DataFrame({
-        'Past_Units': [past_units],
-        'No_of_People': [people],
-        'Season': [season_map[season]]
+        'Prev_Month_Units':[prev_units],
+        'No_of_People':[people],
+        'Season':[season_map[season]],
+        'Temperature':[temp],
+        'House_Size':[house_size],
+        'House_Type':[house_map[house_type]],
+        'Num_Appliances':[appliances],
+        'Usage_Hours':[usage_hours],
+        'Tariff':[tariff]
     })
 
-    predicted_units = model.predict(input_data)[0]
-    bill = calculate_bill(predicted_units)
+    pred_units = round(model.predict(input_data)[0])
+    bill = calculate_bill(pred_units)
 
-    # -------- RESULTS --------
+    # ---------------- RESULTS ----------------
     st.subheader("📊 Prediction Results")
 
     col1, col2 = st.columns(2)
-    col1.metric("🔋 Predicted Units", f"{predicted_units:.2f}")
-    col2.metric("💰 Estimated Bill", f"₹ {bill:.2f}")
+    col1.metric("🔋 Predicted Units", f"{pred_units} units")
+    col2.metric("💰 Estimated Bill", f"₹ {bill}")
 
-    st.info("Model used: Linear Regression (Machine Learning)")
-
-    # -------- CATEGORY --------
-    if predicted_units <= 100:
+    # ---------------- CATEGORY ----------------
+    if pred_units <= 150:
         category = "Low Usage"
-    elif predicted_units <= 200:
+    elif pred_units <= 300:
         category = "Moderate Usage"
     else:
         category = "High Usage"
 
     st.success(f"⚡ Usage Category: {category}")
 
-    
-    # -------- INSIGHTS --------
+    # ---------------- INSIGHTS ----------------
     st.subheader("🧠 Insights")
 
-    if predicted_units > past_units:
-        st.write("📈 Consumption is expected to increase compared to last month.")
+    if pred_units > prev_units:
+        st.write("📈 Consumption is expected to increase.")
     else:
         st.write("📉 Consumption is stable or decreasing.")
 
-    if people > 4:
-        st.write("👨‍👩‍👧 More people increases electricity usage.")
-
     if season == "Summer":
-        st.write("☀️ Summer increases usage due to AC and cooling appliances.")
+        st.write("☀️ High usage due to cooling appliances.")
+    elif season == "Winter":
+        st.write("❄️ Moderate usage expected.")
 
-    # -------- SAVING TIPS --------
+    if appliances > 12:
+        st.write("⚠️ More appliances increase electricity consumption.")
+
+    # ---------------- ENERGY TIPS ----------------
     st.subheader("💡 Energy Saving Tips")
 
-    if predicted_units > 200:
-        st.write("• Use energy-efficient appliances")
+    if pred_units > 350:
         st.write("• Reduce AC usage")
+        st.write("• Use energy-efficient appliances")
         st.write("• Turn off unused devices")
-    elif predicted_units > 120:
-        st.write("• Optimize fan and light usage")
-        st.write("• Avoid standby power consumption")
+    elif pred_units > 200:
+        st.write("• Optimize usage of appliances")
+        st.write("• Avoid standby power")
     else:
-        st.write("• Great! Maintain your usage 👍")
+        st.write("• Good usage! Maintain 👍")
 
-    
-
-    # -------- CLEAN INTERACTIVE GRAPH --------
+    # ---------------- GRAPH ----------------
     st.subheader("📊 Electricity Consumption vs Cost Analysis")
 
-    units_range = list(range(0, 300))
+    units_range = list(range(0, pred_units + 100))
     bills = [calculate_bill(u) for u in units_range]
 
     fig = go.Figure()
 
+    # Bill curve
     fig.add_trace(go.Scatter(
         x=units_range,
         y=bills,
@@ -121,11 +129,20 @@ if submit:
         name='Bill Curve'
     ))
 
+    # Predicted point
+    fig.add_trace(go.Scatter(
+        x=[pred_units],
+        y=[bill],
+        mode='markers',
+        name='Predicted Point',
+        marker=dict(size=10)
+    ))
+
     fig.update_layout(
         title="Electricity Bill vs Units",
         xaxis_title="Units Consumed",
         yaxis_title="Bill (₹)",
-        hovermode='x'
+        template="plotly_white"
     )
 
     st.plotly_chart(fig, use_container_width=True)
